@@ -5,10 +5,16 @@ spring:
   application:
     name: binocheck
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:binocheck}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:binocheck}}
     driver-class-name: org.postgresql.Driver
-    username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD:postgres}
+    username: ${SPRING_DATASOURCE_USERNAME:${DB_USERNAME:postgres}}
+    password: ${SPRING_DATASOURCE_PASSWORD:${DB_PASSWORD:postgres}}
+    hikari:
+      max-lifetime: 300000        # 5 minutes (Neon closes idle connections)
+      keepalive-time: 30000       # ping every 30s to keep connection alive
+      connection-timeout: 30000   # 30s timeout when getting a connection
+      minimum-idle: 1
+      maximum-pool-size: 5
   jpa:
     hibernate:
       ddl-auto: validate
