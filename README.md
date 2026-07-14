@@ -2,6 +2,8 @@
 
 Binocheck is a premium developer-focused web application that analyzes any public GitHub repository and provides a comprehensive explanation of its architecture, technology stack, and module structure. It also features a built-in conversational AI chatbot allowing users to ask specific follow-up questions about the repository's files and components.
 
+**Live Demo**: [binocheck.onrender.com](https://binocheck.onrender.com)
+
 ---
 
 ## 🛠️ Technology Stack
