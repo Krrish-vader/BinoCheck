@@ -68,9 +68,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/api/auth/me');
             if (response.ok) {
                 const data = await response.json();
-                usernameDisplay.textContent = data.username;
-                authOverlay.classList.add('hidden');
-                loadRecentRepositories();
+                if (data.authenticated) {
+                    usernameDisplay.textContent = data.username;
+                    authOverlay.classList.add('hidden');
+                    loadRecentRepositories();
+                } else {
+                    handleAuthRequired();
+                }
             } else {
                 handleAuthRequired();
             }

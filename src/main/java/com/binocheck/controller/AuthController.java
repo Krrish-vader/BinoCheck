@@ -81,14 +81,18 @@ public class AuthController {
     public ResponseEntity<?> me(HttpSession session) {
         Long userId = (Long) session.getAttribute("userId");
         if (userId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Not logged in"));
+            return ResponseEntity.ok(Map.of("authenticated", false));
         }
 
         return userRepository.findById(userId)
-                .map(user -> ResponseEntity.ok(Map.of("id", user.getId(), "username", user.getUsername())))
+                .map(user -> ResponseEntity.ok(Map.of(
+                        "authenticated", true,
+                        "id", user.getId(),
+                        "username", user.getUsername()
+                )))
                 .orElseGet(() -> {
                     session.invalidate();
-                    return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "User not found"));
+                    return ResponseEntity.ok(Map.of("authenticated", false));
                 });
     }
 
