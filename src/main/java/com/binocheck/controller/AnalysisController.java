@@ -3,11 +3,15 @@ package com.binocheck.controller;
 import com.binocheck.dto.*;
 import com.binocheck.entity.AnalyzedRepo;
 import com.binocheck.entity.ChatMessage;
+import com.binocheck.entity.User;
 import com.binocheck.repository.AnalyzedRepoRepository;
 import com.binocheck.repository.ChatMessageRepository;
+import com.binocheck.repository.UserRepository;
 import com.binocheck.service.GitHubService;
 import com.binocheck.service.GeminiService;
+import jakarta.servlet.http.HttpSession;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -25,22 +29,35 @@ public class AnalysisController {
     private final GeminiService geminiService;
     private final AnalyzedRepoRepository repoRepository;
     private final ChatMessageRepository chatRepository;
+    private final UserRepository userRepository;
 
     @Autowired
     public AnalysisController(GitHubService gitHubService,
                               GeminiService geminiService,
                               AnalyzedRepoRepository repoRepository,
-                              ChatMessageRepository chatRepository) {
+                              ChatMessageRepository chatRepository,
+                              UserRepository userRepository) {
         this.gitHubService = gitHubService;
         this.geminiService = geminiService;
         this.repoRepository = repoRepository;
         this.chatRepository = chatRepository;
+        this.userRepository = userRepository;
+    }
+
+    private User getAuthenticatedUser(HttpSession session) {
+        Long userId = (Long) session.getAttribute("userId");
+        if (userId == null) {
+            throw new IllegalStateException("Unauthorized user context");
+        }
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalStateException("User not found"));
     }
 
     @PostMapping("/analyze")
-    public ResponseEntity<AnalyzeResponse> analyzeRepository(@RequestBody AnalyzeRequest request) {
+    public ResponseEntity<AnalyzeResponse> analyzeRepository(@RequestBody AnalyzeRequest request, HttpSession session) {
+        User user = getAuthenticatedUser(session);
         String cleanedUrl = request.getRepoUrl().trim();
-        var existing = repoRepository.findByRepoUrl(cleanedUrl);
+        var existing = repoRepository.findByRepoUrlAndUser(cleanedUrl, user);
         if (existing.isPresent()) {
             return ResponseEntity.ok(mapToResponse(existing.get()));
         }
@@ -50,6 +67,7 @@ public class AnalysisController {
 
         GitHubRepoResponse metadata = (GitHubRepoResponse) repoData.get("metadata");
         AnalyzedRepo repo = AnalyzedRepo.builder()
+                .user(user)
                 .repoUrl(cleanedUrl)
                 .owner((String) repoData.get("owner"))
                 .repoName((String) repoData.get("repoName"))
@@ -66,8 +84,9 @@ public class AnalysisController {
     }
 
     @GetMapping("/repos")
-    public ResponseEntity<List<AnalyzeResponse>> getAnalyzedRepositories() {
-        List<AnalyzedRepo> repos = repoRepository.findAll();
+    public ResponseEntity<List<AnalyzeResponse>> getAnalyzedRepositories(HttpSession session) {
+        User user = getAuthenticatedUser(session);
+        List<AnalyzedRepo> repos = repoRepository.findByUserOrderByAnalyzedAtDesc(user);
         List<AnalyzeResponse> responses = repos.stream()
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
@@ -75,9 +94,14 @@ public class AnalysisController {
     }
 
     @PostMapping("/chat")
-    public ResponseEntity<ChatResponse> chatAboutRepo(@RequestBody ChatRequest request) {
+    public ResponseEntity<?> chatAboutRepo(@RequestBody ChatRequest request, HttpSession session) {
+        User user = getAuthenticatedUser(session);
         AnalyzedRepo repo = repoRepository.findById(request.getRepoId())
                 .orElseThrow(() -> new IllegalArgumentException("Repository not found with ID: " + request.getRepoId()));
+
+        if (!repo.getUser().getId().equals(user.getId())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "Access denied to this repository analysis"));
+        }
 
         ChatMessage userMsg = ChatMessage.builder()
                 .repo(repo)
@@ -117,9 +141,15 @@ public class AnalysisController {
     }
 
     @GetMapping("/repos/{id}/chat")
-    public ResponseEntity<List<ChatResponse>> getChatHistory(@PathVariable Long id) {
+    public ResponseEntity<?> getChatHistory(@PathVariable Long id, HttpSession session) {
+        User user = getAuthenticatedUser(session);
         AnalyzedRepo repo = repoRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Repository not found with ID: " + id));
+
+        if (!repo.getUser().getId().equals(user.getId())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "Access denied to this repository analysis"));
+        }
+
         List<ChatMessage> history = chatRepository.findByRepoOrderBySentAtAsc(repo);
         List<ChatResponse> responses = history.stream()
                 .map(msg -> ChatResponse.builder()

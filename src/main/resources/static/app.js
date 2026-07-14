@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // State Variables
     let currentRepoId = null;
     let currentlyLoading = false;
+    let isSignUp = false;
 
     // DOM Elements
     const welcomeView = document.getElementById('welcome-view');
@@ -39,11 +40,139 @@ document.addEventListener('DOMContentLoaded', () => {
     const chatInput = document.getElementById('chat-input');
     const chatSendBtn = document.getElementById('chat-send-btn');
 
+    // Auth Elements
+    const authOverlay = document.getElementById('auth-overlay');
+    const authForm = document.getElementById('auth-form');
+    const authUsername = document.getElementById('auth-username');
+    const authPassword = document.getElementById('auth-password');
+    const authError = document.getElementById('auth-error');
+    const authSubmitBtn = document.getElementById('auth-submit-btn');
+    const authToggleLink = document.getElementById('auth-toggle-link');
+    const authTitle = document.getElementById('auth-title');
+    const authSubtitle = document.getElementById('auth-subtitle');
+    const authToggleText = document.getElementById('auth-toggle-text');
+    const usernameDisplay = document.getElementById('username-display');
+    const logoutBtn = document.getElementById('logout-btn');
+
     // ==========================================================================
     // Core Initialization
     // ==========================================================================
-    loadRecentRepositories();
+    checkAuthentication();
     setupTabSwitching();
+
+    // ==========================================================================
+    // Authentication Logic
+    // ==========================================================================
+    async function checkAuthentication() {
+        try {
+            const response = await fetch('/api/auth/me');
+            if (response.ok) {
+                const data = await response.json();
+                usernameDisplay.textContent = data.username;
+                authOverlay.classList.add('hidden');
+                loadRecentRepositories();
+            } else {
+                handleAuthRequired();
+            }
+        } catch (error) {
+            console.error("Auth check failed", error);
+            handleAuthRequired();
+        }
+    }
+
+    function handleAuthRequired() {
+        authOverlay.classList.remove('hidden');
+        usernameDisplay.textContent = "Guest";
+        currentRepoId = null;
+        welcomeView.classList.remove('hidden');
+        workspaceView.classList.add('hidden');
+        chatMessages.innerHTML = '';
+        recentReposList.innerHTML = '<div class="empty-state">No repositories analyzed yet.</div>';
+    }
+
+    // Toggle Login/Signup Mode
+    authToggleLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        isSignUp = !isSignUp;
+        authError.classList.add('hidden');
+        authUsername.value = '';
+        authPassword.value = '';
+        
+        if (isSignUp) {
+            authTitle.textContent = "Create Account";
+            authSubtitle.textContent = "Sign up to start analyzing repositories";
+            authSubmitBtn.querySelector('span').textContent = "Sign Up";
+            authSubmitBtn.querySelector('i').className = "fa-solid fa-user-plus";
+            authToggleText.textContent = "Already have an account?";
+            authToggleLink.textContent = "Log In";
+        } else {
+            authTitle.textContent = "Welcome Back";
+            authSubtitle.textContent = "Log in to analyze repositories and manage history";
+            authSubmitBtn.querySelector('span').textContent = "Log In";
+            authSubmitBtn.querySelector('i').className = "fa-solid fa-right-to-bracket";
+            authToggleText.textContent = "Don't have an account?";
+            authToggleLink.textContent = "Sign Up";
+        }
+    });
+
+    // Login/Signup Submit
+    authForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const username = authUsername.value.trim();
+        const password = authPassword.value;
+        if (!username || !password) return;
+
+        authError.classList.add('hidden');
+        authSubmitBtn.disabled = true;
+
+        const url = isSignUp ? '/api/auth/signup' : '/api/auth/login';
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+
+            if (!response.ok) {
+                const data = await response.json();
+                throw new Error(data.message || 'Authentication failed');
+            }
+
+            if (isSignUp) {
+                // Automatically log in on signup success
+                isSignUp = false;
+                const loginResponse = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                if (!loginResponse.ok) {
+                    throw new Error('Sign up successful, but auto-login failed. Please log in manually.');
+                }
+            }
+
+            authUsername.value = '';
+            authPassword.value = '';
+            await checkAuthentication();
+        } catch (error) {
+            console.error(error);
+            authError.querySelector('span').textContent = error.message;
+            authError.classList.remove('hidden');
+        } finally {
+            authSubmitBtn.disabled = false;
+        }
+    });
+
+    // Logout Click
+    logoutBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        try {
+            await fetch('/api/auth/logout', { method: 'POST' });
+        } catch (error) {
+            console.error("Logout request failed", error);
+        }
+        handleAuthRequired();
+    });
 
     // ==========================================================================
     // Event Listeners
@@ -63,6 +192,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ repoUrl })
             });
+
+            if (response.status === 401) {
+                handleAuthRequired();
+                return;
+            }
 
             if (!response.ok) {
                 const errorData = await response.json();
@@ -98,6 +232,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ repoId: currentRepoId, message })
             });
+
+            if (response.status === 401) {
+                typingIndicator.remove();
+                handleAuthRequired();
+                return;
+            }
 
             if (!response.ok) {
                 throw new Error('Failed to get chat response');
@@ -257,6 +397,11 @@ document.addEventListener('DOMContentLoaded', () => {
         chatMessages.innerHTML = '';
         try {
             const response = await fetch(`/api/repos/${repoId}/chat`);
+            if (response.status === 401) {
+                handleAuthRequired();
+                return;
+            }
+
             if (response.ok) {
                 const history = await response.json();
                 if (history.length > 0) {
@@ -319,6 +464,11 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadRecentRepositories() {
         try {
             const response = await fetch('/api/repos');
+            if (response.status === 401) {
+                handleAuthRequired();
+                return;
+            }
+
             if (!response.ok) return;
             const repos = await response.json();
 

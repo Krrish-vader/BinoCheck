@@ -37,6 +37,17 @@
             </div>
             
             <div class="sidebar-footer">
+                <div class="user-profile">
+                    <div class="user-avatar">
+                        <i class="fa-solid fa-user-astronaut"></i>
+                    </div>
+                    <div class="user-meta">
+                        <span id="username-display" class="username-display">Loading...</span>
+                        <button id="logout-btn" title="Log Out" class="logout-btn-link">
+                            <i class="fa-solid fa-right-from-bracket"></i>
+                        </button>
+                    </div>
+                </div>
                 <div class="status-indicator">
                     <span class="pulse-dot"></span>
                     <span>System Active</span>
@@ -220,6 +231,53 @@
 
             </div>
         </main>
+    </div>
+
+    <!-- Authentication Overlay -->
+    <div id="auth-overlay" class="auth-overlay">
+        <div class="auth-card">
+            <div class="auth-header">
+                <div class="auth-logo">
+                    <i class="fa-solid fa-microchip logo-icon"></i>
+                    <span>Binocheck</span>
+                </div>
+                <h2 id="auth-title">Welcome Back</h2>
+                <p id="auth-subtitle">Log in to analyze repositories and manage history</p>
+            </div>
+            
+            <form id="auth-form">
+                <div class="input-group">
+                    <label for="auth-username">Username</label>
+                    <div class="input-wrapper">
+                        <i class="fa-solid fa-user"></i>
+                        <input type="text" id="auth-username" required placeholder="Enter username..." autocomplete="username">
+                    </div>
+                </div>
+                
+                <div class="input-group">
+                    <label for="auth-password">Password</label>
+                    <div class="input-wrapper">
+                        <i class="fa-solid fa-lock"></i>
+                        <input type="password" id="auth-password" required placeholder="Enter password..." autocomplete="current-password">
+                    </div>
+                </div>
+                
+                <div id="auth-error" class="auth-error-msg hidden">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <span>Invalid credentials.</span>
+                </div>
+                
+                <button type="submit" id="auth-submit-btn" class="glowing-btn auth-submit-btn">
+                    <span>Log In</span>
+                    <i class="fa-solid fa-right-to-bracket"></i>
+                </button>
+            </form>
+            
+            <div class="auth-toggle">
+                <span id="auth-toggle-text">Don't have an account?</span>
+                <a href="#" id="auth-toggle-link">Sign Up</a>
+            </div>
+        </div>
     </div>
 
     <!-- Custom App JS -->

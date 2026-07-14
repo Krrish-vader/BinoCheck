@@ -8,7 +8,9 @@ import lombok.Builder;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "analyzed_repos")
+@Table(name = "analyzed_repos", uniqueConstraints = {
+    @UniqueConstraint(columnNames = {"user_id", "repo_url"})
+})
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -19,7 +21,11 @@ public class AnalyzedRepo {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id")
+    private User user;
+
+    @Column(nullable = false)
     private String repoUrl;
 
     @Column(nullable = false)
