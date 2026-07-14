@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Binocheck — Repository Architect & Explainer</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <i class="fa-solid fa-microchip logo-icon"></i>
+                    <span>Binocheck</span>
+                </div>
+                <p class="tagline">Repository Architect & Explainer</p>
+            </div>
+            
+            <div class="history-section">
+                <div class="section-title">
+                    <i class="fa-solid fa-clock-rotate-left"></i>
+                    <span>Recent Analyses</span>
+                </div>
+                <div id="recent-repos-list" class="recent-list">
+                    <!-- Loaded dynamically -->
+                    <div class="empty-state">No repositories analyzed yet.</div>
+                </div>
+            </div>
+            
+            <div class="sidebar-footer">
+                <div class="status-indicator">
+                    <span class="pulse-dot"></span>
+                    <span>System Active</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Dashboard -->
+        <main class="main-content">
+            <!-- Top Navigation / Search bar -->
+            <header class="top-nav">
+                <form id="analyze-form" class="search-box">
+                    <i class="fa-brands fa-github git-icon"></i>
+                    <input 
+                        type="url" 
+                        id="repo-url-input" 
+                        placeholder="Paste a public GitHub repository URL (e.g. https://github.com/owner/repo)..." 
+                        required
+                    >
+                    <button type="submit" id="analyze-btn" class="glowing-btn">
+                        <span>Analyze</span>
+                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    </button>
+                </form>
+            </header>
+
+            <!-- Dashboard Body -->
+            <div class="dashboard-body">
+                <!-- Welcome/Hero state -->
+                <div id="welcome-view" class="center-view hero-card">
+                    <div class="hero-content">
+                        <div class="icon-circle">
+                            <i class="fa-solid fa-cubes"></i>
+                        </div>
+                        <h1>Understand Any Codebase in Seconds</h1>
+                        <p>Paste a public GitHub URL above to analyze its technology stack, project directory tree, software architecture, and chat directly with its structure.</p>
+                        
+                        <div class="features-grid">
+                            <div class="feature-item">
+                                <i class="fa-solid fa-sitemap"></i>
+                                <h3>Architecture Discovery</h3>
+                                <p>Uncovers design patterns, module layers, and code interactions.</p>
+                            </div>
+                            <div class="feature-item">
+                                <i class="fa-solid fa-code-fork"></i>
+                                <h3>Tech Stack Detection</h3>
+                                <p>Identifies compilers, runtimes, UI libraries, and testing tools.</p>
+                            </div>
+                            <div class="feature-item">
+                                <i class="fa-solid fa-comments"></i>
+                                <h3>Interactive Explainer</h3>
+                                <p>Ask specific architectural questions and get context-aware answers.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Loading State -->
+                <div id="loading-view" class="center-view hidden">
+                    <div class="loader-container">
+                        <div class="scanner"></div>
+                        <div class="spinner-mesh">
+                            <div></div><div></div><div></div>
+                        </div>
+                        <h2>Analyzing Repository Structure</h2>
+                        <p id="loading-status-text">Parsing file tree and mapping module configurations...</p>
+                    </div>
+                </div>
+
+                <!-- Main Analysis Workspace -->
+                <div id="workspace-view" class="workspace-grid hidden">
+                    
+                    <!-- Left Section: Repo Metadata & Details -->
+                    <div class="workspace-main-panel">
+                        <!-- Repo Banner -->
+                        <div class="repo-banner">
+                            <div class="repo-meta-header">
+                                <h1 id="repo-title">owner / repo-name</h1>
+                                <div class="repo-badges">
+                                    <span id="repo-lang-badge" class="badge lang-badge">
+                                        <i class="fa-solid fa-code"></i> <span>Language</span>
+                                    </span>
+                                    <span id="repo-stars-badge" class="badge stars-badge">
+                                        <i class="fa-solid fa-star"></i> <span>0</span>
+                                    </span>
+                                    <a id="repo-link" href="#" target="_blank" class="badge github-link-badge">
+                                        <i class="fa-brands fa-github"></i> View Github
+                                    </a>
+                                </div>
+                            </div>
+                            <p id="repo-description" class="repo-description">No description available for this repository.</p>
+                        </div>
+
+                        <!-- Workspace Tabs -->
+                        <div class="tabs-container">
+                            <div class="tabs">
+                                <button class="tab-btn active" data-tab="tab-overview">
+                                    <i class="fa-solid fa-shapes"></i> Architecture
+                                </button>
+                                <button class="tab-btn" data-tab="tab-modules">
+                                    <i class="fa-solid fa-folder-tree"></i> Module Structure
+                                </button>
+                                <button class="tab-btn" data-tab="tab-deepdive">
+                                    <i class="fa-solid fa-book-open"></i> Technical Deep Dive
+                                </button>
+                            </div>
+
+                            <!-- Tab Contents -->
+                            <div class="tab-content active" id="tab-overview">
+                                <div class="overview-grid">
+                                    <div class="tech-stack-card">
+                                        <h3><i class="fa-solid fa-microchip"></i> Detected Tech Stack</h3>
+                                        <div id="tech-stack-badges" class="tech-badges-list">
+                                            <!-- Loaded dynamically -->
+                                        </div>
+                                    </div>
+                                    <div class="summary-card">
+                                        <h3><i class="fa-solid fa-compass"></i> Architecture Summary</h3>
+                                        <p id="architecture-summary-text">Loading...</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="tab-content" id="tab-modules">
+                                <div class="modules-layout">
+                                    <div class="modules-intro">
+                                        <h3><i class="fa-solid fa-folder-tree"></i> Codebase Map</h3>
+                                        <p>Below is a breakdown of the repository's directories and key entry points, explaining their architectural purpose.</p>
+                                    </div>
+                                    <div id="module-structure-list" class="module-list">
+                                        <!-- Loaded dynamically -->
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="tab-content" id="tab-deepdive">
+                                <div class="markdown-card">
+                                    <h3><i class="fa-solid fa-magnifying-glass-chart"></i> In-Depth System Analysis</h3>
+                                    <div id="detailed-analysis-text" class="markdown-body">
+                                        <!-- Loaded dynamically -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right Section: Chat Interface -->
+                    <div class="workspace-chat-panel">
+                        <div class="chat-header">
+                            <div class="chat-title">
+                                <i class="fa-solid fa-comments"></i>
+                                <span>Architect Chat</span>
+                            </div>
+                            <span class="chat-subtitle">Ask questions about this repo</span>
+                        </div>
+                        
+                        <div id="chat-messages" class="chat-messages-container">
+                            <!-- Messages dynamically loaded -->
+                            <div class="system-message">
+                                <i class="fa-solid fa-robot"></i>
+                                <span>I've mapped the repository's files and packages. Ask me anything about how components interact, where specific modules are, or how to set it up.</span>
+                            </div>
+                        </div>
+
+                        <div class="chat-input-area">
+                            <form id="chat-form">
+                                <input 
+                                    type="text" 
+                                    id="chat-input" 
+                                    placeholder="Ask a question about the codebase..." 
+                                    autocomplete="off"
+                                    required
+                                >
+                                <button type="submit" id="chat-send-btn">
+                                    <i class="fa-solid fa-paper-plane"></i>
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- Custom App JS -->
+    <script src="app.js"></script>
+</body>
+</html>
