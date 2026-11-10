@@ -50,6 +50,65 @@ class GitHubServiceFetchTest {
     }
 
     @Test
+    void aFileTreeLargerThanTheDefaultBufferIsStillRead() throws Exception {
+        // Close to 1 MB of JSON: several times the 256 KB default that made large repositories fail.
+        StringBuilder json = new StringBuilder("{\"tree\":[");
+        int entries = 12_000;
+        for (int i = 0; i < entries; i++) {
+            json.append(i == 0 ? "" : ",")
+                    .append("{\"path\":\"src/main/java/com/example/some/package/File").append(i)
+                    .append(".java\",\"type\":\"blob\",\"size\":10}");
+        }
+        byte[] body = json.append("],\"truncated\":false}").toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(body.length).isGreaterThan(3 * 256 * 1024);
+
+        com.sun.net.httpserver.HttpServer server =
+                com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("localhost", 0), 0);
+        server.createContext("/", exchange -> {
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            try (java.io.OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        server.start();
+        try {
+            // The real client configuration, pointed at the local server instead of api.github.com.
+            com.binocheck.config.WebClientConfig config = new com.binocheck.config.WebClientConfig();
+            org.springframework.test.util.ReflectionTestUtils.setField(config, "githubToken", "");
+            org.springframework.test.util.ReflectionTestUtils.setField(config, "connectTimeout", Duration.ofSeconds(5));
+            org.springframework.test.util.ReflectionTestUtils.setField(config, "githubResponseTimeout", Duration.ofSeconds(15));
+            WebClient client = config.githubWebClient(WebClient.builder()).mutate()
+                    .baseUrl("http://localhost:" + server.getAddress().getPort()).build();
+
+            assertThat(new GitHubService(client, new ObjectMapper()).fetchTree("o", "r", "main")).hasSize(entries);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void anEmptyRepositoryGetsAClearMessageInsteadOfGitHubCouldNotBeReached() {
+        ExchangeFunction github = request -> Mono.just(
+                ClientResponse.create(HttpStatus.CONFLICT).body("{\"message\":\"Git Repository is empty.\"}").build());
+
+        assertThatThrownBy(() -> serviceBackedBy(github).fetchTree("o", "r", "main"))
+                .isInstanceOfSatisfying(GitHubApiException.class, e -> {
+                    assertThat(e.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+                    assertThat(e.getMessage()).contains("empty");
+                });
+    }
+
+    @Test
+    void aHugeReadmeIsCutDownBeforeItReachesThePrompt() {
+        String capped = GitHubService.capReadme("x".repeat(GitHubService.MAX_README_CHARS + 5_000));
+
+        assertThat(capped).hasSizeLessThan(GitHubService.MAX_README_CHARS + 100).endsWith("[README truncated]");
+        assertThat(GitHubService.capReadme("short")).isEqualTo("short");
+        assertThat(GitHubService.capReadme(null)).isEmpty();
+    }
+
+    @Test
     void anUnreachableGitHubIsReportedAsBadGatewayWithoutInternalDetails() {
         ExchangeFunction github = request -> Mono.error(new java.io.IOException("connect timed out to 10.0.0.1"));
 

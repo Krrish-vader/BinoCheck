@@ -15,6 +15,8 @@ import java.time.Duration;
 @Configuration
 public class WebClientConfig {
 
+    static final int GITHUB_MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
+
     @Value("${app.github.token:}")
     private String githubToken;
 
@@ -52,6 +54,10 @@ public class WebClientConfig {
         if (StringUtils.hasText(githubToken)) {
             clientBuilder.defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + githubToken.trim());
         }
+
+        // The recursive file tree of a large repository is several MB (GitHub caps it at about 7 MB).
+        // With the default 256 KB buffer every such repository failed to analyze.
+        clientBuilder.codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(GITHUB_MAX_RESPONSE_BYTES));
 
         return clientBuilder.build();
     }

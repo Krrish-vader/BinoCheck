@@ -223,6 +223,8 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         const message = chatInput.value.trim();
         if (!message || !currentRepoId) return;
+        // The reply belongs to the repository that was open when the question was sent.
+        const repoId = currentRepoId;
 
         chatInput.value = '';
         appendChatMessage('USER', message);
@@ -234,7 +236,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ repoId: currentRepoId, message })
+                body: JSON.stringify({ repoId, message })
             });
 
             if (response.status === 401) {
@@ -250,10 +252,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const data = await response.json();
             typingIndicator.remove();
+            // If another repository was opened meanwhile, its chat must not receive this reply.
+            // The reply is stored server-side and appears when this repository is opened again.
+            if (repoId !== currentRepoId) return;
             appendChatMessage('MODEL', data.message, true);
         } catch (error) {
             console.error(error);
             typingIndicator.remove();
+            if (repoId !== currentRepoId) return;
             appendChatMessage('SYSTEM', `Error: ${error.message}`);
         }
     });
@@ -287,10 +293,11 @@ document.addEventListener('DOMContentLoaded', () => {
         errBox.style.borderColor = '#EF4444';
         errBox.style.background = 'rgba(239, 68, 68, 0.08)';
         errBox.style.color = '#FCA5A5';
-        errBox.style.margin = '20px auto';
-        errBox.style.maxWidth = '600px';
+        errBox.style.margin = '0';
         errBox.style.position = 'absolute';
-        errBox.style.top = '100px';
+        errBox.style.top = '16px';
+        errBox.style.width = 'max-content';
+        errBox.style.maxWidth = 'min(600px, calc(100% - 32px))';
         errBox.style.left = '50%';
         errBox.style.transform = 'translateX(-50%)';
         errBox.style.zIndex = '100';
@@ -409,6 +416,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (response.ok) {
                 const history = await response.json();
+                // A slow response for a repository that is no longer open must not fill the current chat.
+                if (repoId !== currentRepoId) return;
+                chatMessages.innerHTML = '';
                 if (history.length > 0) {
                     history.forEach(msg => {
                         appendChatMessage(msg.role, msg.message);
@@ -553,7 +563,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!md) return '';
 
         // Escape first (including quotes) so model output can never open a tag or break out of an attribute.
-        let html = escapeHtml(md);
+        // NUL is reserved below as the placeholder marker for protected code, so it is removed from the input.
+        let html = escapeHtml(md).replace(/\u0000/g, '');
+
+        // Code is taken out first and put back at the end, so the rules below (headers, bold, lists)
+        // never rewrite code: a "# comment" in a shell snippet must not become a heading.
+        const protectedBlocks = [];
+        const protect = (blockHtml) => {
+            protectedBlocks.push(blockHtml);
+            return `\u0000${protectedBlocks.length - 1}\u0000`;
+        };
 
         // Code blocks
         html = html.replace(/```([\s\S]*?)```/g, (match, code) => {
@@ -564,17 +583,17 @@ document.addEventListener('DOMContentLoaded', () => {
             if (langs.includes(firstLine.toLowerCase())) {
                 lines.shift();
             }
-            return `<pre><code>${lines.join('\n')}</code></pre>`;
+            return `\n\n${protect(`<pre><code>${lines.join('\n')}</code></pre>`)}\n\n`;
         });
+
+        // Inline code
+        html = html.replace(/`([^`\n]+)`/g, (match, code) => protect(`<code>${code}</code>`));
 
         // Links: [Text](URL)
         html = html.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (match, text, url) => {
             if (!/^https?:\/\//i.test(url)) return text; // drop non-http(s) links, keep their text
             return `<a href="${url}" target="_blank" rel="noopener noreferrer">${text}</a>`;
         });
-
-        // Inline code
-        html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');
 
         // Headers
         html = html.replace(/^### (.*?)$/gm, '<h3>$1</h3>');
@@ -585,11 +604,10 @@ document.addEventListener('DOMContentLoaded', () => {
         html = html.replace(/\*\*([\s\S]*?)\*\*/g, '<strong>$1</strong>');
 
         // Bullet lists
-        html = html.replace(/^\s*[-*+]\s+(.*?)$/gm, '<li>$1</li>');
+        html = html.replace(/^[ \t]*[-*+]\s+(.*?)$/gm, '<li>$1</li>');
         
-        // Wrap contiguous list items in <ul>
-        // We look for sequences of <li>...</li> and wrap them in <ul>
-        html = html.replace(/(<li>.*?<\/li>)+/gs, '<ul>$&</ul>');
+        // Wrap each run of consecutive list items (one per line) in a single <ul>
+        html = html.replace(/(?:<li>.*<\/li>\n?)+/g, (items) => `<ul>${items.trim()}</ul>\n`);
 
         // Paragraphs - split by double newline and wrap in <p> if not already wrapped
         let blocks = html.split(/\n\n+/);
@@ -598,12 +616,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!trimmed) return '';
             
             // Check if it's already structured block
-            if (trimmed.startsWith('<h') || trimmed.startsWith('<pre') || trimmed.startsWith('<ul') || trimmed.startsWith('<li>')) {
+            const wholeBlockIsCode = /^\u0000\d+\u0000$/.test(trimmed)
+                && protectedBlocks[Number(trimmed.slice(1, -1))].startsWith('<pre');
+            if (trimmed.startsWith('<h') || trimmed.startsWith('<ul') || wholeBlockIsCode) {
                 return trimmed;
             }
             return `<p>${trimmed.replace(/\n/g, '<br>')}</p>`;
         }).join('\n');
 
-        return html;
+        return html.replace(/\u0000(\d+)\u0000/g, (match, index) => protectedBlocks[Number(index)]);
     }
 });

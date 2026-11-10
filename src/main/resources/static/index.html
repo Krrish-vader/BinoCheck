@@ -64,7 +64,11 @@
                 <form id="analyze-form" class="search-box">
                     <i class="fa-brands fa-github git-icon"></i>
                     <input 
-                        type="url" 
+                        type="text"
+                        inputmode="url"
+                        autocomplete="off"
+                        autocapitalize="off"
+                        spellcheck="false"
                         id="repo-url-input" 
                         placeholder="Paste a public GitHub repository URL (e.g. https://github.com/owner/repo)..." 
                         required

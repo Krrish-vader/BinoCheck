@@ -28,6 +28,8 @@ public class GitHubService {
 
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(GitHubService.class);
 
+    static final int MAX_README_CHARS = 20_000;
+
     // How many manifest files are requested from GitHub at the same time.
     private static final int MANIFEST_FETCH_CONCURRENCY = 6;
 
@@ -90,6 +92,11 @@ public class GitHubService {
     private GitHubApiException toClientError(HttpStatusCode status, String body, String notFoundMessage) {
         if (status.value() == HttpStatus.NOT_FOUND.value()) {
             return new GitHubApiException(HttpStatus.NOT_FOUND, notFoundMessage);
+        }
+        // GitHub answers 409 Conflict when a repository has no commits yet.
+        if (status.value() == HttpStatus.CONFLICT.value()) {
+            return new GitHubApiException(HttpStatus.BAD_REQUEST,
+                    "This repository is empty, so there is nothing to analyze yet.");
         }
         log.warn("GitHub API returned {}: {}", status.value(), body);
         if (status.value() == HttpStatus.FORBIDDEN.value() || status.value() == HttpStatus.TOO_MANY_REQUESTS.value()) {
@@ -202,9 +209,7 @@ public class GitHubService {
                 .collect(Collectors.toList());
         Map<String, String> manifestContents = fetchFileContents(owner, repo, manifestPaths);
 
-        if (readmeContent == null) {
-            readmeContent = "";
-        }
+        readmeContent = capReadme(readmeContent);
 
         // Convert file tree to JSON
         String fileTreeJson = "";
@@ -224,6 +229,17 @@ public class GitHubService {
         result.put("manifestContents", manifestContents);
 
         return result;
+    }
+
+    /** Keeps the prompt (and its cost) bounded: a README can be several MB. */
+    static String capReadme(String readme) {
+        if (readme == null) {
+            return "";
+        }
+        if (readme.length() <= MAX_README_CHARS) {
+            return readme;
+        }
+        return readme.substring(0, MAX_README_CHARS) + "\n\n[README truncated]";
     }
 
     private boolean isKeyManifestFile(String path) {

@@ -172,13 +172,13 @@ public class GeminiService {
                     .retrieve()
                     .onStatus(HttpStatusCode::isError, response -> response.bodyToMono(String.class)
                             .flatMap(body -> {
-                                HttpStatus status = (HttpStatus) response.statusCode();
-                                if (status == HttpStatus.NOT_FOUND) {
+                                int status = response.statusCode().value();
+                                if (status == HttpStatus.NOT_FOUND.value()) {
                                     return Mono.error(new GeminiApiException(
                                             "AI model unavailable — configuration issue. The model '" + modelName + 
                                             "' may be deprecated or the API endpoint is incorrect. Details: " + body));
                                 }
-                                return Mono.error(new GeminiApiException("Gemini API returned error status " + status.value() + ": " + body));
+                                return Mono.error(new GeminiApiException("Gemini API returned error status " + status + ": " + body));
                             }))
                     .bodyToMono(String.class)
                     .block();
