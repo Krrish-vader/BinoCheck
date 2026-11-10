@@ -1,5 +1,16 @@
 server:
   port: 8080
+  # Trust X-Forwarded-* from the hosting proxy (Render) so the client IP used for rate limiting
+  # and the https scheme are the real ones.
+  forward-headers-strategy: framework
+  servlet:
+    session:
+      timeout: 8h
+      cookie:
+        http-only: true
+        same-site: lax
+        # Set COOKIE_SECURE=true in production (HTTPS) so the session cookie is never sent over plain http.
+        secure: ${COOKIE_SECURE:false}
 
 spring:
   application:

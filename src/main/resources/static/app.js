@@ -244,7 +244,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (!response.ok) {
-                throw new Error('Failed to get chat response');
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || 'Unable to fetch response from the architect.');
             }
 
             const data = await response.json();
@@ -253,7 +254,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error(error);
             typingIndicator.remove();
-            appendChatMessage('SYSTEM', 'Error: Unable to fetch response from the architect.');
+            appendChatMessage('SYSTEM', `Error: ${error.message}`);
         }
     });
 
@@ -293,7 +294,7 @@ document.addEventListener('DOMContentLoaded', () => {
         errBox.style.left = '50%';
         errBox.style.transform = 'translateX(-50%)';
         errBox.style.zIndex = '100';
-        errBox.innerHTML = `<i class="fa-solid fa-triangle-exclamation" style="color: #EF4444;"></i> <span>${message}</span>`;
+        errBox.innerHTML = `<i class="fa-solid fa-triangle-exclamation" style="color: #EF4444;"></i> <span>${escapeHtml(message)}</span>`;
         
         document.querySelector('.dashboard-body').appendChild(errBox);
         setTimeout(() => errBox.remove(), 6000);
@@ -317,7 +318,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         repoStarsBadge.querySelector('span').textContent = data.starsCount || 0;
-        repoLink.href = data.repoUrl;
+        repoLink.href = safeUrl(data.repoUrl);
 
         // Parse Analysis result
         let analysis;
@@ -359,7 +360,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 // Determine icon based on name (e.g. source, test, config, package, etc.)
                 let iconClass = 'fa-folder';
-                const lowerName = mod.name.toLowerCase();
+                const lowerName = String(mod.name || '').toLowerCase();
                 if (lowerName.includes('test')) iconClass = 'fa-vial';
                 else if (lowerName.includes('config') || lowerName.includes('properties') || lowerName.endsWith('.yml') || lowerName.endsWith('.xml')) iconClass = 'fa-gears';
                 else if (lowerName.includes('controller') || lowerName.includes('api') || lowerName.includes('rest')) iconClass = 'fa-network-wired';
@@ -373,8 +374,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         <i class="fa-solid ${iconClass}"></i>
                     </div>
                     <div class="module-info">
-                        <div class="module-name">${mod.name}</div>
-                        <div class="module-purpose">${mod.purpose}</div>
+                        <div class="module-name">${escapeHtml(mod.name)}</div>
+                        <div class="module-purpose">${escapeHtml(mod.purpose)}</div>
                     </div>
                 `;
                 moduleStructureList.appendChild(item);
@@ -435,7 +436,7 @@ document.addEventListener('DOMContentLoaded', () => {
             msgDiv.innerHTML = `<div class="markdown-body">${renderMarkdown(text)}</div>`;
         } else if (role === 'SYSTEM') {
             msgDiv.className = 'system-message';
-            msgDiv.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> <span>${text}</span>`;
+            msgDiv.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> <span>${escapeHtml(text)}</span>`;
         } else {
             msgDiv.textContent = text;
         }
@@ -487,14 +488,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 card.className = `history-card ${repo.id === currentRepoId ? 'active' : ''}`;
                 
                 card.innerHTML = `
-                    <div class="repo-name" title="${repo.repoName}">${repo.repoName}</div>
-                    <div class="repo-owner">${repo.owner}</div>
+                    <div class="repo-name" title="${escapeHtml(repo.repoName)}">${escapeHtml(repo.repoName)}</div>
+                    <div class="repo-owner">${escapeHtml(repo.owner)}</div>
                     <div class="meta-row">
                         <div class="lang-indicator">
                             <span class="lang-dot"></span>
-                            <span>${repo.primaryLanguage || 'Unknown'}</span>
+                            <span>${escapeHtml(repo.primaryLanguage || 'Unknown')}</span>
                         </div>
-                        <div class="stars"><i class="fa-solid fa-star"></i> ${repo.starsCount || 0}</div>
+                        <div class="stars"><i class="fa-solid fa-star"></i> ${Number(repo.starsCount) || 0}</div>
                     </div>
                 `;
 
@@ -533,16 +534,27 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================================================
     // Simple Markdown Renderer
     // ==========================================================================
+    // Escape every character that is significant in HTML text or attribute context.
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    // Only allow http(s) links; anything else (javascript:, data:, ...) becomes inert.
+    function safeUrl(url) {
+        return /^https?:\/\//i.test(String(url ?? '').trim()) ? url : '#';
+    }
+
     function renderMarkdown(md) {
         if (!md) return '';
-        let html = md;
-        
-        // Escape HTML to prevent XSS (keep basic tag rendering intact if we use it)
-        html = html
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;");
-            
+
+        // Escape first (including quotes) so model output can never open a tag or break out of an attribute.
+        let html = escapeHtml(md);
+
         // Code blocks
         html = html.replace(/```([\s\S]*?)```/g, (match, code) => {
             let lines = code.trim().split('\n');
@@ -556,7 +568,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // Links: [Text](URL)
-        html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+        html = html.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (match, text, url) => {
+            if (!/^https?:\/\//i.test(url)) return text; // drop non-http(s) links, keep their text
+            return `<a href="${url}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+        });
 
         // Inline code
         html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');

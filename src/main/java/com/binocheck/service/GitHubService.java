@@ -24,6 +24,8 @@ import java.util.stream.Collectors;
 @Service
 public class GitHubService {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(GitHubService.class);
+
     private final WebClient githubWebClient;
     private final ObjectMapper objectMapper;
 
@@ -33,36 +35,26 @@ public class GitHubService {
         this.objectMapper = objectMapper;
     }
 
+    // github.com/<owner>/<repo>, optionally followed by .git, a trailing slash, or a sub-path like /tree/main.
+    // Owner and repo names are limited to the characters GitHub itself allows.
+    private static final java.util.regex.Pattern GITHUB_REPO_URL = java.util.regex.Pattern.compile(
+            "^(?:https?://)?(?:www\\.)?github\\.com/([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))/([A-Za-z0-9._-]{1,100}?)(?:\\.git)?/?(?:[/?#].*)?$",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
+
     public RepoCoordinates parseUrl(String url) {
         if (url == null || url.isBlank()) {
             throw new InvalidGitHubUrlException("GitHub URL cannot be empty");
         }
-        String cleaned = url.trim();
-        if (cleaned.endsWith("/")) {
-            cleaned = cleaned.substring(0, cleaned.length() - 1);
+        java.util.regex.Matcher m = GITHUB_REPO_URL.matcher(url.trim());
+        if (!m.matches() || m.group(2).equals(".") || m.group(2).equals("..")) {
+            throw new InvalidGitHubUrlException("Please enter a GitHub repository URL like https://github.com/owner/repo");
         }
-        if (cleaned.endsWith(".git")) {
-            cleaned = cleaned.substring(0, cleaned.length() - 4);
-        }
+        return new RepoCoordinates(m.group(1), m.group(2));
+    }
 
-        String marker = "github.com/";
-        int index = cleaned.indexOf(marker);
-        if (index == -1) {
-            throw new InvalidGitHubUrlException("URL must be a valid GitHub repository URL");
-        }
-
-        String path = cleaned.substring(index + marker.length());
-        String[] parts = path.split("/");
-        if (parts.length < 2) {
-            throw new InvalidGitHubUrlException("URL must contain both owner and repository name");
-        }
-
-        String owner = parts[0];
-        String repo = parts[1];
-        if (owner.isBlank() || repo.isBlank()) {
-            throw new InvalidGitHubUrlException("Invalid owner or repository name in URL");
-        }
-        return new RepoCoordinates(owner, repo);
+    /** One canonical form per repository, so the same repo is never analyzed (and billed) twice. */
+    public String canonicalUrl(RepoCoordinates coords) {
+        return ("https://github.com/" + coords.getOwner() + "/" + coords.getRepo()).toLowerCase(java.util.Locale.ROOT);
     }
 
     public GitHubRepoResponse fetchMetadata(String owner, String repo) {
@@ -70,15 +62,28 @@ public class GitHubService {
                 .uri("/repos/{owner}/{repo}", owner, repo)
                 .retrieve()
                 .onStatus(HttpStatusCode::isError, response -> response.bodyToMono(String.class)
-                        .flatMap(body -> {
-                            HttpStatus status = (HttpStatus) response.statusCode();
-                            if (status == HttpStatus.NOT_FOUND) {
-                                return Mono.error(new GitHubApiException(status, "GitHub repository not found: " + owner + "/" + repo));
-                            }
-                            return Mono.error(new GitHubApiException(status, "GitHub API error: " + body));
-                        }))
+                        .defaultIfEmpty("")
+                        .flatMap(body -> Mono.error(toClientError(response.statusCode(), body,
+                                "GitHub repository not found: " + owner + "/" + repo))))
                 .bodyToMono(GitHubRepoResponse.class)
                 .block();
+    }
+
+    /**
+     * Converts a GitHub error into one that is safe to show to the user. GitHub's own status is not passed
+     * through: a 401/403 from GitHub (bad token, rate limit) must not look like "you are logged out" to the
+     * frontend, and GitHub's response body is logged rather than returned.
+     */
+    private GitHubApiException toClientError(HttpStatusCode status, String body, String notFoundMessage) {
+        if (status.value() == HttpStatus.NOT_FOUND.value()) {
+            return new GitHubApiException(HttpStatus.NOT_FOUND, notFoundMessage);
+        }
+        log.warn("GitHub API returned {}: {}", status.value(), body);
+        if (status.value() == HttpStatus.FORBIDDEN.value() || status.value() == HttpStatus.TOO_MANY_REQUESTS.value()) {
+            return new GitHubApiException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "GitHub rate limit reached. Please try again in a few minutes.");
+        }
+        return new GitHubApiException(HttpStatus.BAD_GATEWAY, "GitHub could not be reached. Please try again later.");
     }
 
     public List<TreeEntry> fetchTree(String owner, String repo, String branch) {
@@ -87,8 +92,9 @@ public class GitHubService {
                     .uri("/repos/{owner}/{repo}/git/trees/{branch}?recursive=1", owner, repo, branch)
                     .retrieve()
                     .onStatus(HttpStatusCode::isError, r -> r.bodyToMono(String.class)
-                            .flatMap(body -> Mono.error(new GitHubApiException((HttpStatus) r.statusCode(),
-                                    "Failed to fetch file tree: " + body))))
+                            .defaultIfEmpty("")
+                            .flatMap(body -> Mono.error(toClientError(r.statusCode(), body,
+                                    "Could not read the file tree of " + owner + "/" + repo + "."))))
                     .bodyToMono(GitHubTreeResponse.class)
                     .block();
             return response != null && response.getTree() != null ? response.getTree() : List.of();
@@ -96,7 +102,8 @@ public class GitHubService {
             if (e instanceof GitHubApiException) {
                 throw e;
             }
-            throw new GitHubApiException(HttpStatus.BAD_GATEWAY, "Failed to connect to GitHub Trees API: " + e.getMessage());
+            log.warn("Failed to fetch GitHub tree for {}/{}", owner, repo, e);
+            throw new GitHubApiException(HttpStatus.BAD_GATEWAY, "GitHub could not be reached. Please try again later.");
         }
     }
 
