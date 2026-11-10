@@ -14,9 +14,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -25,6 +27,9 @@ import java.util.stream.Collectors;
 public class GitHubService {
 
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(GitHubService.class);
+
+    // How many manifest files are requested from GitHub at the same time.
+    private static final int MANIFEST_FETCH_CONCURRENCY = 6;
 
     private final WebClient githubWebClient;
     private final ObjectMapper objectMapper;
@@ -58,15 +63,23 @@ public class GitHubService {
     }
 
     public GitHubRepoResponse fetchMetadata(String owner, String repo) {
-        return this.githubWebClient.get()
-                .uri("/repos/{owner}/{repo}", owner, repo)
-                .retrieve()
-                .onStatus(HttpStatusCode::isError, response -> response.bodyToMono(String.class)
-                        .defaultIfEmpty("")
-                        .flatMap(body -> Mono.error(toClientError(response.statusCode(), body,
-                                "GitHub repository not found: " + owner + "/" + repo))))
-                .bodyToMono(GitHubRepoResponse.class)
-                .block();
+        try {
+            return this.githubWebClient.get()
+                    .uri("/repos/{owner}/{repo}", owner, repo)
+                    .retrieve()
+                    .onStatus(HttpStatusCode::isError, response -> response.bodyToMono(String.class)
+                            .defaultIfEmpty("")
+                            .flatMap(body -> Mono.error(toClientError(response.statusCode(), body,
+                                    "GitHub repository not found: " + owner + "/" + repo))))
+                    .bodyToMono(GitHubRepoResponse.class)
+                    .block();
+        } catch (GitHubApiException e) {
+            throw e;
+        } catch (Exception e) {
+            // Timeouts and connection failures: logged here, reported to the user in plain words.
+            log.warn("Failed to fetch GitHub metadata for {}/{}", owner, repo, e);
+            throw new GitHubApiException(HttpStatus.BAD_GATEWAY, "GitHub could not be reached. Please try again later.");
+        }
     }
 
     /**
@@ -109,16 +122,38 @@ public class GitHubService {
 
     public String fetchFileContent(String owner, String repo, String path) {
         try {
-            return this.githubWebClient.get()
-                    .uri("/repos/{owner}/{repo}/contents/{path}", owner, repo, path)
-                    .header(HttpHeaders.ACCEPT, "application/vnd.github.raw")
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .onErrorResume(e -> Mono.empty())
-                    .block();
+            return fileContent(owner, repo, path).block();
         } catch (Exception e) {
             return "";
         }
+    }
+
+    /** Emits the file's text, or completes empty when the file can't be read. */
+    private Mono<String> fileContent(String owner, String repo, String path) {
+        return this.githubWebClient.get()
+                .uri("/repos/{owner}/{repo}/contents/{path}", owner, repo, path)
+                .header(HttpHeaders.ACCEPT, "application/vnd.github.raw")
+                .retrieve()
+                .bodyToMono(String.class)
+                .onErrorResume(e -> Mono.empty());
+    }
+
+    /**
+     * Fetches several files at once instead of one after another. An unreadable or blank file is
+     * left out. The result keeps the order of {@code paths}, so the prompt built from it is stable.
+     */
+    Map<String, String> fetchFileContents(String owner, String repo, List<String> paths) {
+        Map<String, String> contents = new LinkedHashMap<>();
+        List<Map.Entry<String, String>> fetched = Flux.fromIterable(paths)
+                .flatMapSequential(path -> fileContent(owner, repo, path)
+                        .filter(content -> !content.isBlank())
+                        .map(content -> Map.entry(path, content)), MANIFEST_FETCH_CONCURRENCY)
+                .collectList()
+                .block();
+        if (fetched != null) {
+            fetched.forEach(entry -> contents.put(entry.getKey(), entry.getValue()));
+        }
+        return contents;
     }
 
     public String fetchReadme(String owner, String repo) {
@@ -159,18 +194,13 @@ public class GitHubService {
         String readmeContent = fetchReadme(owner, repo);
 
         // Fetch key manifest files content
-        Map<String, String> manifestContents = new HashMap<>();
-        for (TreeEntry entry : filteredTree) {
-            if ("blob".equals(entry.getType()) && isKeyManifestFile(entry.getPath())) {
+        List<String> manifestPaths = filteredTree.stream()
+                .filter(entry -> "blob".equals(entry.getType()) && isKeyManifestFile(entry.getPath()))
                 // Cap at 50 KB per file
-                if (entry.getSize() != null && entry.getSize() <= 50000) {
-                    String content = fetchFileContent(owner, repo, entry.getPath());
-                    if (content != null && !content.isBlank()) {
-                        manifestContents.put(entry.getPath(), content);
-                    }
-                }
-            }
-        }
+                .filter(entry -> entry.getSize() != null && entry.getSize() <= 50000)
+                .map(TreeEntry::getPath)
+                .collect(Collectors.toList());
+        Map<String, String> manifestContents = fetchFileContents(owner, repo, manifestPaths);
 
         if (readmeContent == null) {
             readmeContent = "";
