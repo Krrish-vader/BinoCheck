@@ -9,9 +9,10 @@ Analyzes public GitHub repositories with Google Gemini. Users sign up, paste a r
 - Frontend: plain HTML/CSS/JS in `src/main/resources/static/`, with no build step and no framework.
 
 ## Layout
+- `config/WebClientConfig`: the GitHub and Gemini `WebClient`s, with connect and response timeouts (`app.*` in `application.yml`).
 - `controller/`: `AuthController` (`/api/auth/*`) and `AnalysisController` (`/api/analyze`, `/api/repos`, `/api/chat`).
-- `service/GitHubService`: URL parsing, repo metadata, file tree (depth ≤3, max 150 entries), manifest files.
-- `service/GeminiService`: builds prompts and calls the `generateContent` REST API. Analysis uses a structured JSON response schema.
+- `service/GitHubService`: URL parsing, repo metadata, file tree (depth ≤3, max 150 entries), manifest files (fetched in parallel).
+- `service/GeminiService`: builds prompts and calls the `generateContent` REST API. Analysis uses a structured JSON response schema. Chat `history` must exclude the current question; the service appends it.
 - `security/`: `RateLimiter` (in-memory, single instance) and `SecurityHeadersFilter` (CSP and related headers).
 - `exception/GlobalExceptionHandler`: the only place errors become HTTP responses.
 - `db/migration/`: Flyway scripts `V1__init.sql`, `V2__add_users.sql`, ...
@@ -62,7 +63,9 @@ Analyzes public GitHub repositories with Google Gemini. Users sign up, paste a r
 - For UI changes, also check the page in a browser.
 
 ## Known issues (not yet fixed)
-- Chat sends the current question to Gemini twice: `AnalysisController` saves the user message before loading history, and `GeminiService` appends it again.
-- No timeouts on the `WebClient`s. Manifest files are fetched one at a time.
-- No mobile layout (no `@media` rules in `styles.css`).
-- The README says `gemini-1.5-flash` and port 5432; the code uses `gemini-3.1-flash-lite` and 5433.
+- The tree sampler takes the first 150 paths at depth ≤3 in alphabetical order, so large repos fill up with `.github/` and asset folders before `src/`. The Trees API `truncated` flag is ignored.
+- No size limits on prompts: the whole README is sent, and every chat request sends the full analysis JSON, file tree and all earlier messages.
+- The analysis cache never expires (no commit SHA check).
+- The Dockerfile runs as root and has no `HEALTHCHECK`.
+- No CI workflow (`.github/workflows`) yet.
+- The mobile layout (`@media (max-width: 900px)` at the end of `styles.css`) was checked with static page previews, not yet on a real phone against the live app.

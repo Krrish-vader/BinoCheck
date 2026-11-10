@@ -11,7 +11,7 @@ Binocheck is a premium developer-focused web application that analyzes any publi
 - **Backend**: Java 21, Spring Boot 3.3.1 (Spring Web, WebFlux/WebClient, Spring Data JPA)
 - **Database**: PostgreSQL (Persistent local storage for analysis caching and chat history)
 - **Database Migrations**: Flyway (Version-controlled database schema migrations)
-- **AI Integration**: Google Gemini API (`gemini-1.5-flash` model with Structured Output JSON Schema)
+- **AI Integration**: Google Gemini API (`gemini-3.1-flash-lite` by default, configurable with `GEMINI_MODEL`; Structured Output JSON Schema)
 - **Frontend**: Semantic HTML5, Vanilla CSS3 (Custom-designed developer dark aesthetic), and Vanilla ES6 JavaScript (using Web APIs, Fetch, and dynamic DOM manipulation)
 - **Containerization**: Docker & Docker Compose (Multi-stage build)
 
@@ -43,7 +43,7 @@ To run the application locally without installing PostgreSQL directly on your ho
    ```bash
    docker compose up -d postgres
    ```
-   This launches a PostgreSQL container on port `5432` with a persistent named volume.
+   This launches a PostgreSQL container on host port `5433` (mapped to 5432 inside the container) with a persistent named volume.
 
 2. Set your environment variables in your terminal:
    
@@ -63,10 +63,12 @@ To run the application locally without installing PostgreSQL directly on your ho
    ```bash
    mvn clean spring-boot:run
    ```
-   *Note: Spring Boot will automatically connect to the Docker-hosted Postgres on `localhost:5432` and Flyway will apply migrations on startup.*
+   *Note: Spring Boot will automatically connect to the Docker-hosted Postgres on `localhost:5433` and Flyway will apply migrations on startup.*
 
 4. Access the web interface in your browser:
    [http://localhost:8080/](http://localhost:8080/)
+
+5. **Create an account** on the sign-up screen. Analyses and chat history are private to each user, so you need to be logged in before analyzing a repository.
 
 ---
 
@@ -102,8 +104,11 @@ To run the application locally without installing PostgreSQL directly on your ho
 - **Persistent Postgres Cache**: Analyzed repository structures and chat sessions are stored securely in PostgreSQL.
 
 ### API Endpoints
+All endpoints except `/api/auth/*` require a logged-in session.
+
+- `POST /api/auth/signup`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me` - Account and session management.
 - `POST /api/analyze` - Parses and analyzes a public repository URL.
-- `GET /api/repos` - Lists all previously analyzed repositories.
+- `GET /api/repos` - Lists the repositories analyzed by the current user.
 - `POST /api/chat` - Submits a question about a repository and returns the model reply.
 - `GET /api/repos/{id}/chat` - Retrieves chat history for a specific repository.
 
