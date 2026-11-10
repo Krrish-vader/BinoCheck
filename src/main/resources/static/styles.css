@@ -1278,3 +1278,183 @@ body {
     background: rgba(239, 68, 68, 0.08);
 }
 
+
+/* ==========================================================================
+   Small screens (phones, narrow tablets)
+   The desktop layout is three fixed-height columns (sidebar, analysis, chat).
+   Below 900px they stack into one scrolling page instead.
+   ========================================================================== */
+@media (max-width: 900px) {
+    body {
+        height: auto;
+        min-height: 100vh;
+        overflow-x: hidden;
+        overflow-y: auto;
+    }
+
+    .app-container {
+        flex-direction: column;
+        height: auto;
+        min-height: 100vh;
+        width: 100%;
+    }
+
+    /* Sidebar becomes a compact strip on top; recent analyses scroll sideways. */
+    .sidebar {
+        width: 100%;
+        border-right: none;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .sidebar-header {
+        padding: 16px;
+    }
+
+    .history-section {
+        flex: none;
+        padding: 12px 16px;
+        overflow-y: visible;
+    }
+
+    .recent-list {
+        flex-direction: row;
+        overflow-x: auto;
+        padding-bottom: 4px;
+    }
+
+    .recent-list .history-card {
+        flex: 0 0 220px;
+    }
+
+    .recent-list .empty-state {
+        flex: 1;
+    }
+
+    .sidebar-footer {
+        padding: 12px 16px;
+    }
+
+    .main-content {
+        height: auto;
+        overflow: visible;
+    }
+
+    .top-nav {
+        position: sticky;
+        top: 0;
+        padding: 0 12px;
+        background: rgba(11, 15, 25, 0.95);
+    }
+
+    .search-box {
+        padding-left: 12px;
+        gap: 8px;
+    }
+
+    .search-box input {
+        min-width: 0;
+    }
+
+    .dashboard-body {
+        overflow: visible;
+    }
+
+    .center-view {
+        position: static;
+        height: auto;
+        min-height: 60vh;
+        padding: 24px 16px;
+        overflow-y: visible;
+    }
+
+    .features-grid {
+        grid-template-columns: 1fr;
+    }
+
+    /* Analysis first, chat underneath. */
+    .workspace-grid {
+        position: static;
+        grid-template-columns: minmax(0, 1fr);
+        height: auto;
+        overflow: visible;
+    }
+
+    .workspace-main-panel {
+        height: auto;
+        overflow-y: visible;
+        border-right: none;
+    }
+
+    .repo-banner {
+        padding: 20px 16px 16px;
+    }
+
+    .repo-meta-header h1 {
+        font-size: 21px;
+        overflow-wrap: anywhere;
+    }
+
+    .repo-badges {
+        flex-wrap: wrap;
+    }
+
+    .tabs {
+        padding: 0 8px;
+        overflow-x: auto;
+    }
+
+    .tab-btn {
+        padding: 14px 12px;
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+
+    .tab-content {
+        padding: 16px;
+    }
+
+    .markdown-body,
+    .module-info {
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+
+    /* The chat keeps its own scroll area so the input stays reachable. */
+    .workspace-chat-panel {
+        height: 75vh;
+        min-height: 420px;
+        border-top: 1px solid var(--border-color);
+    }
+
+    .chat-header {
+        padding: 16px;
+    }
+
+    .chat-messages-container {
+        padding: 16px;
+    }
+
+    .chat-input-area {
+        padding: 12px 16px 16px;
+    }
+
+    .auth-overlay {
+        padding: 16px;
+        overflow-y: auto;
+    }
+
+    .auth-card {
+        padding: 28px 20px;
+    }
+}
+
+@media (max-width: 480px) {
+    /* Icon-only Analyze button so the URL field keeps usable width. */
+    #analyze-btn span {
+        display: none;
+    }
+
+    .hero-content h1 {
+        font-size: 26px;
+    }
+}
