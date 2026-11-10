@@ -596,18 +596,26 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // Headers
-        html = html.replace(/^### (.*?)$/gm, '<h3>$1</h3>');
-        html = html.replace(/^## (.*?)$/gm, '<h2>$1</h2>');
-        html = html.replace(/^# (.*?)$/gm, '<h1>$1</h1>');
+        // Each heading becomes its own block (blank line before and after), so text on the
+        // following line is still treated as a paragraph or list instead of being glued to it.
+        html = html.replace(/^### (.*?)$/gm, '\n\n<h3>$1</h3>\n\n');
+        html = html.replace(/^## (.*?)$/gm, '\n\n<h2>$1</h2>\n\n');
+        html = html.replace(/^# (.*?)$/gm, '\n\n<h1>$1</h1>\n\n');
 
         // Bold text
         html = html.replace(/\*\*([\s\S]*?)\*\*/g, '<strong>$1</strong>');
+
+        // Numbered lists ("1. item"). <oli> is a temporary tag; the input is already escaped, so it
+        // cannot come from the text itself. The original number is kept through the value attribute.
+        html = html.replace(/^[ \t]*(\d{1,9})[.)][ \t]+(.*?)$/gm, '<oli value="$1">$2</oli>');
+        html = html.replace(/(?:<oli .*<\/oli>\n?)+/g,
+            (items) => `\n\n<ol>${items.trim().replace(/<oli /g, '<li ').replace(/<\/oli>/g, '</li>')}</ol>\n\n`);
 
         // Bullet lists
         html = html.replace(/^[ \t]*[-*+]\s+(.*?)$/gm, '<li>$1</li>');
         
         // Wrap each run of consecutive list items (one per line) in a single <ul>
-        html = html.replace(/(?:<li>.*<\/li>\n?)+/g, (items) => `<ul>${items.trim()}</ul>\n`);
+        html = html.replace(/(?:<li>.*<\/li>\n?)+/g, (items) => `\n\n<ul>${items.trim()}</ul>\n\n`);
 
         // Paragraphs - split by double newline and wrap in <p> if not already wrapped
         let blocks = html.split(/\n\n+/);
@@ -618,7 +626,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Check if it's already structured block
             const wholeBlockIsCode = /^\u0000\d+\u0000$/.test(trimmed)
                 && protectedBlocks[Number(trimmed.slice(1, -1))].startsWith('<pre');
-            if (trimmed.startsWith('<h') || trimmed.startsWith('<ul') || wholeBlockIsCode) {
+            if (trimmed.startsWith('<h') || trimmed.startsWith('<ul') || trimmed.startsWith('<ol') || wholeBlockIsCode) {
                 return trimmed;
             }
             return `<p>${trimmed.replace(/\n/g, '<br>')}</p>`;
