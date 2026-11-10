@@ -122,15 +122,16 @@ public class AnalysisController {
         AnalyzedRepo repo = findOwnedRepo(request.getRepoId(), user);
         rateLimiter.check("chat:" + user.getId(), CHAT_MESSAGES_PER_HOUR, Duration.ofHours(1));
 
+        // History is loaded before the new question exists in the database, so it holds only earlier
+        // messages; GeminiService appends the current question itself.
+        List<ChatMessage> history = chatRepository.findByRepoOrderBySentAtAsc(repo);
+
         ChatMessage userMsg = ChatMessage.builder()
                 .repo(repo)
                 .role("USER")
                 .messageText(request.getMessage())
                 .sentAt(LocalDateTime.now())
                 .build();
-        chatRepository.save(userMsg);
-
-        List<ChatMessage> history = chatRepository.findByRepoOrderBySentAtAsc(repo);
 
         String repoContext = String.format(
                 "Repository: %s/%s\nDescription: %s\nPrimary Language: %s\nStars: %d\n\nInitial Analysis (JSON):\n%s\n\nFile Tree:\n%s",
@@ -150,7 +151,9 @@ public class AnalysisController {
                 .messageText(reply)
                 .sentAt(LocalDateTime.now())
                 .build();
-        chatRepository.save(modelMsg);
+        // Question and answer are stored together, only after Gemini replied. A failed call leaves no
+        // unanswered question behind in the chat history.
+        chatRepository.saveAll(List.of(userMsg, modelMsg));
 
         return ResponseEntity.ok(ChatResponse.builder()
                 .role("MODEL")

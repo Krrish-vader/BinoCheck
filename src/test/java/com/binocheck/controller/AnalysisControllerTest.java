@@ -116,6 +116,50 @@ class AnalysisControllerTest {
         verify(geminiService, never()).analyzeRepository(any());
     }
 
+    private AnalyzedRepo alicesRepo(long id) {
+        AnalyzedRepo repo = AnalyzedRepo.builder().id(id).user(alice).repoUrl("https://github.com/a/r")
+                .owner("a").repoName("r").analyzedAt(LocalDateTime.now()).build();
+        when(repoRepository.findById(id)).thenReturn(Optional.of(repo));
+        return repo;
+    }
+
+    @Test
+    void chatSendsOnlyEarlierMessagesAsHistoryAndStoresBothMessagesAfterTheReply() throws Exception {
+        AnalyzedRepo repo = alicesRepo(11L);
+        when(geminiService.generateChatResponse(anyString(), any(), eq("What is this?"))).thenReturn("An app.");
+
+        mockMvc.perform(post("/api/chat").session(aliceSession).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"repoId\":11,\"message\":\"What is this?\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("An app."));
+
+        // The question must not be in the database yet when the history is read,
+        // otherwise Gemini receives it twice.
+        var order = org.mockito.Mockito.inOrder(chatRepository, geminiService);
+        order.verify(chatRepository).findByRepoOrderBySentAtAsc(repo);
+        order.verify(geminiService).generateChatResponse(anyString(), any(), eq("What is this?"));
+        order.verify(chatRepository).saveAll(org.mockito.ArgumentMatchers.argThat(messages -> {
+            java.util.List<String> roles = new java.util.ArrayList<>();
+            messages.forEach(m -> roles.add(m.getRole()));
+            return roles.equals(java.util.List.of("USER", "MODEL"));
+        }));
+        verify(chatRepository, never()).save(any());
+    }
+
+    @Test
+    void failedChatReplyStoresNothing() throws Exception {
+        alicesRepo(12L);
+        when(geminiService.generateChatResponse(anyString(), any(), anyString()))
+                .thenThrow(new GeminiApiException("boom"));
+
+        mockMvc.perform(post("/api/chat").session(aliceSession).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"repoId\":12,\"message\":\"hi\"}"))
+                .andExpect(status().isBadGateway());
+
+        verify(chatRepository, never()).save(any());
+        verify(chatRepository, never()).saveAll(any());
+    }
+
     @Test
     void upstreamAiErrorsAreNotLeakedToTheClient() throws Exception {
         when(repoRepository.findByRepoUrlAndUser(anyString(), any())).thenReturn(Optional.empty());

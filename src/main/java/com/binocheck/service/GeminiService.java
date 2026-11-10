@@ -128,39 +128,40 @@ public class GeminiService {
     public String generateChatResponse(String repoContext, List<ChatMessage> history, String userQuestion) {
         String systemInstructionText = "You are Binocheck, an expert AI coding assistant. You are helping the user understand the codebase of the analyzed repository. Below is the codebase context (metadata, file tree, key file contents, and initial analysis). Answer the user's follow-up questions accurately based on this context. Keep answers clear, technical, and precise. If they ask about code that is not shown, answer based on common architectural patterns of the technologies involved or suggest where it would be located.";
 
-        // Build list of contents
-        List<Map<String, Object>> contents = new ArrayList<>();
-
-        // Inject repoContext as the first message or prepend it to the first user question
-        // Let's prepend the context to the first message if history is empty,
-        // or just supply it as system instruction/system context.
-        // Actually, supplying repoContext in the first turn is great. Let's do that!
-        
-        if (history.isEmpty()) {
-            String firstUserText = String.format("Repository Context:\n%s\n\nQuestion: %s", repoContext, userQuestion);
-            contents.add(Map.of("role", "user", "parts", List.of(Map.of("text", firstUserText))));
-        } else {
-            // Re-compile history
-            boolean first = true;
-            for (ChatMessage msg : history) {
-                String role = "USER".equalsIgnoreCase(msg.getRole()) ? "user" : "model";
-                String text = msg.getMessageText();
-                if (first && "user".equals(role)) {
-                    text = String.format("Repository Context:\n%s\n\nQuestion: %s", repoContext, text);
-                    first = false;
-                }
-                contents.add(Map.of("role", role, "parts", List.of(Map.of("text", text))));
-            }
-            // Append current question
-            contents.add(Map.of("role", "user", "parts", List.of(Map.of("text", userQuestion))));
-        }
-
         Map<String, Object> requestPayload = Map.of(
-                "contents", contents,
+                "contents", buildChatContents(repoContext, history, userQuestion),
                 "systemInstruction", Map.of("parts", List.of(Map.of("text", systemInstructionText)))
         );
 
         return callGemini(requestPayload);
+    }
+
+    /**
+     * Builds the conversation turns sent to Gemini: the earlier messages, then the current question
+     * exactly once. {@code history} must hold only messages from before this question. The repository
+     * context is attached to the first user turn of the conversation.
+     */
+    List<Map<String, Object>> buildChatContents(String repoContext, List<ChatMessage> history, String userQuestion) {
+        List<Map<String, Object>> contents = new ArrayList<>();
+        boolean contextAttached = false;
+
+        for (ChatMessage msg : history) {
+            String role = "USER".equalsIgnoreCase(msg.getRole()) ? "user" : "model";
+            String text = msg.getMessageText();
+            if (!contextAttached && "user".equals(role)) {
+                text = withContext(repoContext, text);
+                contextAttached = true;
+            }
+            contents.add(Map.of("role", role, "parts", List.of(Map.of("text", text))));
+        }
+
+        String question = contextAttached ? userQuestion : withContext(repoContext, userQuestion);
+        contents.add(Map.of("role", "user", "parts", List.of(Map.of("text", question))));
+        return contents;
+    }
+
+    private static String withContext(String repoContext, String question) {
+        return String.format("Repository Context:\n%s\n\nQuestion: %s", repoContext, question);
     }
 
     private String callGemini(Map<String, Object> payload) {
